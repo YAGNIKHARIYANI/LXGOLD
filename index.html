@@ -503,10 +503,54 @@
       gap: 8px;
     }
 
+    /* Shimmer Skeleton Loading Animation */
+    .shimmer {
+      position: relative;
+      overflow: hidden;
+      background: #11141d !important;
+      color: transparent !important;
+      border-radius: 8px !important;
+      user-select: none;
+      min-width: 90px;
+      min-height: 24px;
+      display: inline-block;
+      pointer-events: none;
+    }
+    .shimmer::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(245, 192, 66, 0.08) 25%,
+        rgba(255, 255, 255, 0.18) 50%,
+        rgba(245, 192, 66, 0.08) 75%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      animation: shimmerAnim 1.4s infinite ease-in-out;
+    }
+    .hero-val.shimmer {
+      min-height: 48px;
+      width: 75%;
+      border-radius: 10px !important;
+    }
+    .hero-sub .num.shimmer {
+      min-height: 18px;
+      width: 35%;
+      border-radius: 6px !important;
+    }
+    @keyframes shimmerAnim {
+      100% {
+        transform: translateX(100%);
+      }
+    }
+
     footer {
       text-align: center;
       padding: 30px 0;
-      font-size: 0.8rem;
+      font-size: 0.92rem;
       color: var(--text-dim);
       border-top: 1px solid var(--card-border);
       margin-top: 40px;
@@ -626,9 +670,7 @@
   </main>
 
   <footer>
-    <p>⚡ 100% Real-Time API Stream — LX GOLD/SILVER RATES Live WebSocket Feed</p>
-    <p style="margin-top: 6px; font-size: 0.82rem; color: #cbd5e1;">Developed with ❤️ by <strong style="color: #f5c042;">Yagnik Hariyani</strong> &amp; <strong style="color: #f5c042;">Vaidehi Hariyani</strong></p>
-    <p style="margin-top: 4px; font-size: 0.72rem; color: #64748b;">Zero mock or simulator data. Synchronized second-by-second directly with live market feeds.</p>
+    <p style="font-size: 0.95rem; color: #cbd5e1;">Developed with ❤️ by <strong style="color: #f5c042;">Yagnik Hariyani</strong> &amp; <strong style="color: #f5c042;">Vaidehi Hariyani</strong></p>
   </footer>
 
   <!-- Local Centrifuge SDK -->
@@ -728,6 +770,38 @@
       }, 750);
     }
 
+    // Shimmer Skeleton Controllers
+    function showShimmer() {
+      const heroVals = [document.getElementById('hero24K'), document.getElementById('hero22K'), document.getElementById('heroSilver')];
+      heroVals.forEach(el => {
+        if (el && el.textContent === '—') el.classList.add('shimmer');
+      });
+      const heroDeltas = [document.getElementById('hero24KDelta'), document.getElementById('hero22KDelta'), document.getElementById('heroSilverDelta')];
+      heroDeltas.forEach(el => {
+        if (el && !el.textContent.trim()) el.classList.add('shimmer');
+      });
+      document.querySelectorAll('.price-card-val').forEach(el => {
+        if (el.textContent === '—') el.classList.add('shimmer');
+      });
+      document.querySelectorAll('.price-card-delta').forEach(el => {
+        if (el.textContent === '—' || !el.textContent.trim()) el.classList.add('shimmer');
+      });
+    }
+
+    function hideShimmer() {
+      document.querySelectorAll('.shimmer').forEach(el => {
+        el.classList.remove('shimmer');
+      });
+    }
+
+    function initSkeletonGrid() {
+      const goldKeys = ['GL995', 'GR995', 'GR995WG', 'GL999', 'GR999', 'GR999WG'];
+      const silverKeys = ['SL999', 'SR999', 'SR999WG'];
+      goldKeys.forEach(k => syncCard('goldContainer', k, null, null, 'gold'));
+      silverKeys.forEach(k => syncCard('silverContainer', k, null, null, 'silver'));
+      showShimmer();
+    }
+
     // In-place Update or Create Rate Card
     function syncCard(containerId, sym, value, delta, tagType) {
       const container = document.getElementById(containerId);
@@ -741,6 +815,7 @@
       const deltaStr = formatDeltaWithPct(delta, value);
       const isPos = typeof delta === 'number' && delta >= 0;
       const deltaCls = typeof delta === 'number' ? (isPos ? 'delta-pos' : 'delta-neg') : 'delta-none';
+      const isShimmer = typeof value !== 'number';
 
       let card = document.getElementById(`card-${sym}`);
       if (!card) {
@@ -752,8 +827,8 @@
             <span class="price-card-title">${label}</span>
             <span class="price-card-badge section-badge ${tagType}">${tagType.toUpperCase()}</span>
           </div>
-          <div class="price-card-val num" id="val-${sym}">${valStr}</div>
-          <div class="price-card-delta num ${deltaCls}" id="delta-${sym}">
+          <div class="price-card-val num ${isShimmer ? 'shimmer' : ''}" id="val-${sym}">${valStr}</div>
+          <div class="price-card-delta num ${deltaCls} ${isShimmer ? 'shimmer' : ''}" id="delta-${sym}">
             ${deltaStr}
           </div>
         `;
@@ -761,6 +836,11 @@
       } else {
         const valEl = document.getElementById(`val-${sym}`);
         const deltaEl = document.getElementById(`delta-${sym}`);
+
+        if (typeof value === 'number') {
+          if (valEl) valEl.classList.remove('shimmer');
+          if (deltaEl) deltaEl.classList.remove('shimmer');
+        }
 
         // Check if price changed
         const oldVal = prevPrices[sym];
@@ -785,6 +865,7 @@
     function renderAllGrids(data) {
       if (!data) return;
       lastKnownData = data;
+      hideShimmer();
 
       const topMap = {};
       (data.top || []).forEach(x => topMap[x.s] = x);
@@ -1061,6 +1142,7 @@
 
     // Bootstrap
     window.addEventListener('DOMContentLoaded', async () => {
+      initSkeletonGrid();
       await loadAllCities();
     });
   </script>
