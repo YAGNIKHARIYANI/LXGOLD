@@ -14,9 +14,9 @@ export default async function handler(req, res) {
   const citySlug = String(city).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   const urlsToTry = [
-    `https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}?_t=${Date.now()}`,
-    `https://allindiabullion.com/gold-rate/${stateSlug}?_t=${Date.now()}`,
-    `https://allindiabullion.com/gold-rate/gujarat/ahmedabad?_t=${Date.now()}`
+    `https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}`,
+    `https://allindiabullion.com/gold-rate/${stateSlug}`,
+    `https://allindiabullion.com/gold-rate/gujarat/ahmedabad`
   ];
 
   function unwrap(val) {
@@ -31,15 +31,22 @@ export default async function handler(req, res) {
     return val;
   }
 
+  const debugInfo = [];
+
   for (const url of urlsToTry) {
     try {
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Cache-Control': 'no-cache'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Referer': 'https://allindiabullion.com/'
         }
       });
+
+      debugInfo.push({ url, status: response.status });
 
       if (!response.ok) continue;
 
@@ -59,11 +66,14 @@ export default async function handler(req, res) {
           ref: initial.ref || [],
           ts: initial.ts || Date.now()
         });
+      } else {
+        debugInfo.push({ url, error: 'RateBoard props not found in HTML' });
       }
     } catch (e) {
+      debugInfo.push({ url, error: e.message });
       continue;
     }
   }
 
-  return res.status(500).json({ success: false, error: 'Live market rates could not be fetched' });
+  return res.status(500).json({ success: false, error: 'Live market rates could not be fetched', debug: debugInfo });
 }
