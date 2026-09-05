@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LX GOLD/SILVER RATES — Live Real-Time Market Feed</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #050608;
+      --card-bg: #0c0e14;
+      --card-border: #1a1e29;
+      --card-hover: #232a3b;
+      --gold: #f5c042;
+      --gold-glow: rgba(245, 192, 66, 0.15);
+      --gold-gradient: linear-gradient(135deg, #fff3b0 0%, #f5c042 50%, #b8860b 100%);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --up: #22c55e;
+      --up-bg: rgba(34, 197, 94, 0.14);
+      --down: #ef4444;
+      --down-bg: rgba(239, 68, 68, 0.14);
+      --sky: #38bdf8;
+      --sky-bg: rgba(56, 189, 248, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+
+    .num {
+      font-family: 'JetBrains Mono', monospace;
+      font-feature-settings: 'tnum';
+    }    
+    
+    .app-container {
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 0 28px 60px;
+    }
+
+    /* Top Sticky Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(5, 6, 8, 0.92);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 0;
+      margin-bottom: 24px;
+      width: 100%;
+    }
+    .header-inner {
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 0 28px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--gold-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 900;
+      color: #000000;
+      box-shadow: 0 4px 20px rgba(245, 192, 66, 0.35);
+      letter-spacing: -0.04em;
+    }
+    .brand-name {
+      font-weight: 900;
+      font-size: 1.35rem;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #ffffff 0%, #fef08a 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-tag {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+    }
+    .brand-tag strong {
+      color: var(--gold);
+    }
+
+    /* Developer Credits Pill on Top */
+    .dev-credit-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, rgba(245, 192, 66, 0.12) 0%, rgba(184, 134, 11, 0.08) 100%);
+      border: 1px solid rgba(245, 192, 66, 0.3);
+      color: #fef08a;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    .dev-credit-badge strong {
+      color: #ffffff;
+      font-weight: 800;
+    }
+
+    /* Status Pill */
+    .status-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      transition: all 0.3s ease;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+    .status-pill.live {
+      border-color: rgba(34, 197, 94, 0.3);
+      color: var(--up);
+      background: var(--up-bg);
+    }
+    .status-pill.live .status-dot {
+      background: var(--up);
+      box-shadow: 0 0 10px var(--up);
+      animation: pulse 1.6s infinite;
+    }
+    .status-pill.connecting {
+      border-color: rgba(245, 192, 66, 0.3);
+      color: var(--gold);
+      background: var(--gold-glow);
+    }
+    .status-pill.connecting .status-dot {
+      background: var(--gold);
+      animation: pulse 1s infinite;
+    }
+    .status-pill.error {
+      border-color: rgba(239, 68, 68, 0.3);
+      color: var(--down);
+      background: var(--down-bg);
+    }
+    .status-pill.error .status-dot {
+      background: var(--down);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Control & Filter Bar */
+    .filter-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 16px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .selector-pair {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+    }
+    .select-item {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 1;
+      min-width: 220px;
+    }
+    .select-title {
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    select {
+      background: #050609;
+      color: #ffffff;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s;
+      width: 100%;
+    }
+    select:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 2px var(--gold-glow);
+    }
+    .live-clock-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: #06070a;
+      border: 1px solid var(--card-border);
+      padding: 10px 16px;
+      border-radius: 10px;
+    }
+
+    /* Hero Headline Summary */
+    .hero-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+    .hero-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 24px 28px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .hero-box:hover {
+      transform: translateY(-2px);
+      border-color: var(--card-hover);
+    }
+    .hero-box::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+    .hero-box.gold24::before { background: linear-gradient(90deg, #f59e0b, #fde047); }
+    .hero-box.gold22::before { background: linear-gradient(90deg, #d97706, #fbbf24); }
+    .hero-box.silver::before { background: linear-gradient(90deg, #38bdf8, #bae6fd); }
+
+    .hero-tag {
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+    .hero-val {
+      font-size: 2.35rem;
+      font-weight: 900;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+    .hero-box.gold24 .hero-val { color: #fef08a; }
+    .hero-box.gold22 .hero-val { color: #fde047; }
+    .hero-box.silver .hero-val { color: #e0f2fe; }
+    .hero-sub {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    /* Section Component */
+    .market-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .section-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-title {
+      font-size: 1.08rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.01em;
+    }
+    .section-badge {
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .section-badge.spot { background: var(--sky-bg); color: var(--sky); }
+    .section-badge.gold { background: var(--gold-glow); color: var(--gold); }
+    .section-badge.silver { background: rgba(226, 232, 240, 0.1); color: #cbd5e1; }
+
+    /* Rates Cards Grid - Perfect 3-Column Equal Spacing */
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      padding: 24px;
+    }
+    .price-card {
+      background: #06070a;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+      min-height: 120px;
+    }
+    .price-card:hover {
+      border-color: var(--card-hover);
+      background: #0a0c12;
+    }
+    .price-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .price-card-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .price-card-badge {
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .price-card-val {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: transparent;
+      display: inline-block;
+      transition: background 0.3s ease, color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+      border: 1px solid transparent;
+    }
+    .price-card-delta {
+      font-size: 0.76rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding-left: 2px;
+    }
+
+    .delta-pos { color: var(--up); }
+    .delta-neg { color: var(--down); }
+    .delta-none { color: var(--text-dim); }
+
+    /* Stock Market Live Tick Background Flash */
+    .flash-green {
+      background: #14532d !important;
+      color: #86efac !important;
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.5) !important;
+      border-color: #22c55e !important;
+      transform: scale(1.05);
+    }
+    .flash-red {
+      background: #7f1d1d !important;
+      color: #fca5a5 !important;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.5) !important;
+      border-color: #ef4444 !important;
+      transform: scale(0.97);
+    }
+
+    .card-pulse-green {
+      border-color: #22c55e !important;
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.25) !important;
+    }
+    .card-pulse-red {
+      border-color: #ef4444 !important;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.25) !important;
+    }
+
+    /* Responsive Media Queries */
+    @media (max-width: 1024px) {
+      .app-container {
+        padding: 0 18px 50px;
+      }
+      .header-inner {
+        padding: 0 18px;
+      }
+      .hero-summary {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 14px;
+      }
+      .grid-container {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+        padding: 18px;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .app-container {
+        padding: 0 12px 40px;
+      }
+      .header-inner {
+        padding: 0 12px;
+      }
+      .hero-summary {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .hero-box {
+        padding: 18px 20px;
+      }
+      .hero-val {
+        font-size: 1.95rem;
+      }
+      .grid-container {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 14px;
+      }
+      .selector-pair {
+        flex-direction: column;
+      }
+      .select-item {
+        width: 100%;
+        min-width: 100%;
+      }
+      .filter-panel {
+        padding: 14px;
+      }
+    }
+
+    /* Error Bar */
+    .error-alert {
+      display: none;
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      color: #fca5a5;
+    }
+    .error-alert.show { display: block; }
+    .error-alert-title {
+      font-weight: 800;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 30px 0;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      border-top: 1px solid var(--card-border);
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- STICKY TOP HEADER -->
+  <header>
+    <div class="header-inner">
+      <div class="brand-wrap">
+        <div class="brand-badge">LX</div>
+        <div>
+          <h1 class="brand-name">LX GOLD/SILVER RATES</h1>
+          <p class="brand-tag">Developed by <strong>Yagnik Hariyani</strong> &amp; <strong>Vaidehi Hariyani</strong></p>
+        </div>
+      </div>
+      <div class="status-group">
+        <div class="status-pill live" id="statusPill">
+          <div class="status-dot"></div>
+          <span id="statusText">Live 1s Feed</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-container">
+
+    <!-- ALL 36 STATES & 679 CITIES FILTER BAR -->
+    <div class="filter-panel">
+      <div class="selector-pair">
+        <div class="select-item">
+          <label class="select-title" for="stateSelect">State / UT (36 States)</label>
+          <select id="stateSelect" onchange="onStateSelected()">
+            <!-- Populated from cities.json -->
+          </select>
+        </div>
+        <div class="select-item">
+          <label class="select-title" for="citySelect">Live City Market (679 Cities)</label>
+          <select id="citySelect" onchange="onCitySelected()">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+      </div>
+      <div class="live-clock-badge">
+        <span>🕒</span>
+        <span class="num" id="clockDisplay">17:20:00 IST</span>
+      </div>
+    </div>
+
+    <!-- ERROR BANNER -->
+    <div class="error-alert" id="errorAlert">
+      <div class="error-alert-title">
+        <span>⚠️</span>
+        <span id="errorAlertTitle">Live API Error</span>
+      </div>
+      <div id="errorAlertMsg">Reconnecting to live rate feed...</div>
+    </div>
+
+    <!-- HERO SUMMARY CARDS -->
+    <div class="hero-summary">
+      <div class="hero-box gold24">
+        <div class="hero-tag">24 Carat Gold (With GST)</div>
+        <div class="hero-val num" id="hero24K">—</div>
+        <div class="hero-sub">
+          <span>per 10g (999 Fine Gold)</span>
+          <span class="num" id="hero24KDelta"></span>
+        </div>
+      </div>
+
+      <div class="hero-box gold22">
+        <div class="hero-tag">22 Carat Jewellery Gold</div>
+        <div class="hero-val num" id="hero22K">—</div>
+        <div class="hero-sub">
+          <span>per 10g (916 Standard Gold)</span>
+          <span class="num" id="hero22KDelta"></span>
+        </div>
+      </div>
+
+      <div class="hero-box silver">
+        <div class="hero-tag">999 Fine Silver (With GST)</div>
+        <div class="hero-val num" id="heroSilver">—</div>
+        <div class="hero-sub">
+          <span>per 1 kg Fine Silver</span>
+          <span class="num" id="heroSilverDelta"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- GOLD PRODUCTS -->
+    <section class="market-section">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span>Gold Products</span>
+        </h2>
+        <span class="section-badge gold">Gold</span>
+      </div>
+      <div class="grid-container" id="goldContainer">
+        <!-- Live Gold Products -->
+      </div>
+    </section>
+
+    <!-- SILVER PRODUCTS -->
+    <section class="market-section">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span>Silver Products</span>
+        </h2>
+        <span class="section-badge silver">Silver</span>
+      </div>
+      <div class="grid-container" id="silverContainer">
+        <!-- Live Silver Products -->
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>⚡ 100% Real-Time API Stream — LX GOLD/SILVER RATES Live WebSocket Feed</p>
+    <p style="margin-top: 6px; font-size: 0.82rem; color: #cbd5e1;">Developed with ❤️ by <strong style="color: #f5c042;">Yagnik Hariyani</strong> &amp; <strong style="color: #f5c042;">Vaidehi Hariyani</strong></p>
+    <p style="margin-top: 4px; font-size: 0.72rem; color: #64748b;">Zero mock or simulator data. Synchronized second-by-second directly with live market feeds.</p>
+  </footer>
+
+  <!-- Local Centrifuge SDK -->
+  <script src="/centrifuge.js"></script>
+
+  <script>
+    // Exact Product Labels
+    const PRODUCT_LABELS = {
+      TSG: 'GLD $',
+      TSS: 'SLR $',
+      TUI: '₹ vs $ (USD/INR)',
+      TG:  'GLD ₹ Spot',
+      TS:  'SLR ₹ Spot',
+      GL995: 'Retail 995',
+      GR995: '995 Before GST',
+      GR995WG: '995 With GST',
+      GL999: 'Retail 999',
+      GR999: '999 Before GST',
+      GR999WG: '999 With GST',
+      SL999: 'Retail 999',
+      SR999: '999 Before GST',
+      SR999WG: '999 With GST'
+    };
+
+    const UNIT_DEFINITIONS = [
+      { name: '1 Gram', grams: 1, label: 'per gram' },
+      { name: '10 Grams', grams: 10, label: 'per 10g' },
+      { name: '1 Tola', grams: 11.6638038, label: 'per tola' },
+      { name: '1 Ounce', grams: 32.157, label: 'per oz' }
+    ];
+
+    const CARAT_PURITIES = [
+      { carat: 24, factor: 1.0, name: '24 Carat (999)' },
+      { carat: 23, factor: 23 / 24, name: '23 Carat (958)' },
+      { carat: 22, factor: 22 / 24, name: '22 Carat (916)' },
+      { carat: 20, factor: 20 / 24, name: '20 Carat (833)' },
+      { carat: 18, factor: 18 / 24, name: '18 Carat (750)' },
+      { carat: 14, factor: 14 / 24, name: '14 Carat (585)' }
+    ];
+
+    let allCitiesMap = {};
+    let currentState = 'GUJARAT';
+    let currentCity = 'AHMEDABAD';
+    let activeUnitIdx = 1;
+    let centrifugeClient = null;
+    let currentSubscription = null;
+    let prevPrices = {};
+    let lastKnownData = null;
+
+    // Formatting Helpers
+    function formatINR(val) {
+      if (typeof val !== 'number' || isNaN(val)) return '—';
+      if (val >= 1000) {
+        return '₹' + Math.round(val).toLocaleString('en-IN');
+      }
+      return val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatDeltaWithPct(delta, price) {
+      if (typeof delta !== 'number' || isNaN(delta)) return '—';
+      const sign = delta >= 0 ? '▲ +' : '▼ ';
+      let str = sign + Math.abs(delta).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      if (price && typeof price === 'number' && price > 0) {
+        const base = price - delta;
+        if (base > 0) {
+          const pct = (delta / base) * 100;
+          str += ` (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+        }
+      }
+      return str;
+    }
+
+    // Trading Terminal Live Tick Highlight (Vivid Dark Green / Dark Red Background)
+    function triggerPriceFlash(elId, cardId, newVal, oldVal) {
+      if (typeof oldVal !== 'number' || typeof newVal !== 'number' || oldVal === newVal) return;
+      const valEl = document.getElementById(elId);
+      const cardEl = cardId ? document.getElementById(cardId) : null;
+      if (!valEl) return;
+
+      const isUp = newVal > oldVal;
+      const flashClass = isUp ? 'flash-green' : 'flash-red';
+      const pulseClass = isUp ? 'card-pulse-green' : 'card-pulse-red';
+
+      // Remove existing animation classes if any
+      valEl.classList.remove('flash-green', 'flash-red');
+      if (cardEl) cardEl.classList.remove('card-pulse-green', 'card-pulse-red');
+
+      // Trigger reflow to restart animation smoothly
+      void valEl.offsetWidth;
+
+      valEl.classList.add(flashClass);
+      if (cardEl) cardEl.classList.add(pulseClass);
+
+      setTimeout(() => {
+        valEl.classList.remove(flashClass);
+        if (cardEl) cardEl.classList.remove(pulseClass);
+      }, 750);
+    }
+
+    // In-place Update or Create Rate Card
+    function syncCard(containerId, sym, value, delta, tagType) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      const label = PRODUCT_LABELS[sym] || sym;
+      const isSpot = sym.startsWith('T');
+      const valStr = typeof value === 'number'
+        ? ((sym === 'TSG' || sym === 'TSS' || sym === 'TUI') ? value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : formatINR(value))
+        : '—';
+      const deltaStr = formatDeltaWithPct(delta, value);
+      const isPos = typeof delta === 'number' && delta >= 0;
+      const deltaCls = typeof delta === 'number' ? (isPos ? 'delta-pos' : 'delta-neg') : 'delta-none';
+
+      let card = document.getElementById(`card-${sym}`);
+      if (!card) {
+        const div = document.createElement('div');
+        div.className = 'price-card';
+        div.id = `card-${sym}`;
+        div.innerHTML = `
+          <div class="price-card-head">
+            <span class="price-card-title">${label}</span>
+            <span class="price-card-badge section-badge ${tagType}">${tagType.toUpperCase()}</span>
+          </div>
+          <div class="price-card-val num" id="val-${sym}">${valStr}</div>
+          <div class="price-card-delta num ${deltaCls}" id="delta-${sym}">
+            ${deltaStr}
+          </div>
+        `;
+        container.appendChild(div);
+      } else {
+        const valEl = document.getElementById(`val-${sym}`);
+        const deltaEl = document.getElementById(`delta-${sym}`);
+
+        // Check if price changed
+        const oldVal = prevPrices[sym];
+        if (typeof oldVal === 'number' && typeof value === 'number' && oldVal !== value) {
+          triggerPriceFlash(`val-${sym}`, `card-${sym}`, value, oldVal);
+        }
+
+        if (valEl && valEl.textContent !== valStr) {
+          valEl.textContent = valStr;
+        }
+        if (deltaEl) {
+          deltaEl.textContent = deltaStr;
+          deltaEl.className = `price-card-delta num ${deltaCls}`;
+        }
+      }
+
+      if (typeof value === 'number') {
+        prevPrices[sym] = value;
+      }
+    }
+
+    function renderAllGrids(data) {
+      if (!data) return;
+      lastKnownData = data;
+
+      const topMap = {};
+      (data.top || []).forEach(x => topMap[x.s] = x);
+      const refMap = {};
+      (data.ref || []).forEach(x => refMap[x.s] = x);
+
+      // Hero 24K & 22K (Exact AIB: 24 Carat is GR999WG with GST)
+      const gr999wg = refMap['GR999WG'];
+      const gl999 = refMap['GL999'];
+      const sr999wg = refMap['SR999WG'];
+
+      if (gr999wg && typeof gr999wg.a === 'number') {
+        const p24 = gr999wg.a;
+        const p22 = Math.round(p24 * 22 / 24);
+
+        const old24 = prevPrices['HERO_24K'];
+        if (typeof old24 === 'number' && old24 !== p24) {
+          triggerPriceFlash('hero24K', null, p24, old24);
+          triggerPriceFlash('hero22K', null, p22, prevPrices['HERO_22K']);
+        }
+        prevPrices['HERO_24K'] = p24;
+        prevPrices['HERO_22K'] = p22;
+
+        document.getElementById('hero24K').textContent = formatINR(p24);
+        document.getElementById('hero22K').textContent = formatINR(p22);
+
+        if (typeof gr999wg.d === 'number') {
+          const d24El = document.getElementById('hero24KDelta');
+          d24El.textContent = formatDeltaWithPct(gr999wg.d, p24);
+          d24El.className = 'num ' + (gr999wg.d >= 0 ? 'delta-pos' : 'delta-neg');
+
+          const d22El = document.getElementById('hero22KDelta');
+          const d22 = Math.round(gr999wg.d * 22 / 24);
+          d22El.textContent = formatDeltaWithPct(d22, p22);
+          d22El.className = 'num ' + (d22 >= 0 ? 'delta-pos' : 'delta-neg');
+        }
+      } else if (gl999 && typeof gl999.a === 'number') {
+        document.getElementById('hero24K').textContent = formatINR(gl999.a);
+        document.getElementById('hero22K').textContent = formatINR(Math.round(gl999.a * 22 / 24));
+      }
+
+      // Hero Silver
+      if (sr999wg && typeof sr999wg.a === 'number') {
+        const oldSilver = prevPrices['HERO_SILVER'];
+        if (typeof oldSilver === 'number' && oldSilver !== sr999wg.a) {
+          triggerPriceFlash('heroSilver', null, sr999wg.a, oldSilver);
+        }
+        prevPrices['HERO_SILVER'] = sr999wg.a;
+
+        document.getElementById('heroSilver').textContent = formatINR(sr999wg.a);
+        if (typeof sr999wg.d === 'number') {
+          const sEl = document.getElementById('heroSilverDelta');
+          sEl.textContent = formatDeltaWithPct(sr999wg.d, sr999wg.a);
+          sEl.className = 'num ' + (sr999wg.d >= 0 ? 'delta-pos' : 'delta-neg');
+        }
+      }
+
+      // Gold Products Grid (In-place update)
+      const goldKeys = ['GL995', 'GR995', 'GR995WG', 'GL999', 'GR999', 'GR999WG'];
+      goldKeys.forEach(k => {
+        const item = refMap[k];
+        if (item) syncCard('goldContainer', k, item.a, item.d, 'gold');
+      });
+
+      // Silver Products Grid (In-place update)
+      const silverKeys = ['SL999', 'SR999', 'SR999WG'];
+      silverKeys.forEach(k => {
+        const item = refMap[k];
+        if (item) syncCard('silverContainer', k, item.a, item.d, 'silver');
+      });
+    }
+
+    let streamSource = null;
+
+    // Real-Time Persistent EventStream (Like Stock Broker Trading Terminals)
+    function startMarketStream() {
+      if (streamSource) {
+        try { streamSource.close(); } catch (e) {}
+        streamSource = null;
+      }
+
+      const streamUrl = `/api/stream?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`;
+      streamSource = new EventSource(streamUrl);
+
+      streamSource.onopen = () => {
+        document.getElementById('statusPill').className = 'status-pill live';
+        document.getElementById('statusText').textContent = 'Live Streaming';
+        document.getElementById('errorAlert').classList.remove('show');
+      };
+
+      streamSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.success) {
+            renderAllGrids(data);
+          }
+        } catch (err) {
+          console.error('Stream parse error:', err);
+        }
+      };
+
+      streamSource.onerror = () => {
+        document.getElementById('statusPill').className = 'status-pill connecting';
+        document.getElementById('statusText').textContent = 'Reconnecting...';
+      };
+    }
+
+    // Load Cities from cities.json
+    async function loadAllCities() {
+      try {
+        const res = await fetch('/cities.json');
+        if (res.ok) {
+          allCitiesMap = await res.json();
+        }
+      } catch (e) {
+        console.warn('Could not load cities.json');
+      }
+
+      const stateSelect = document.getElementById('stateSelect');
+      const states = Object.keys(allCitiesMap);
+      stateSelect.innerHTML = states.map(st => `<option value="${st}" ${st === 'GUJARAT' ? 'selected' : ''}>${st}</option>`).join('');
+
+      populateCitiesForState('GUJARAT');
+    }
+
+    function populateCitiesForState(st) {
+      currentState = st;
+      const cities = allCitiesMap[st] || ['AHMEDABAD'];
+      const citySelect = document.getElementById('citySelect');
+      citySelect.innerHTML = cities.map((c, i) => `<option value="${c}" ${c === 'AHMEDABAD' || i === 0 ? 'selected' : ''}>${c}</option>`).join('');
+
+      currentCity = cities.includes('AHMEDABAD') ? 'AHMEDABAD' : cities[0];
+      startMarketStream();
+    }
+
+    function onStateSelected() {
+      const st = document.getElementById('stateSelect').value;
+      populateCitiesForState(st);
+    }
+
+    function onCitySelected() {
+      currentCity = document.getElementById('citySelect').value;
+      startMarketStream();
+    }
+
+    // Real-Time 1-Second Live Clock
+    setInterval(() => {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      document.getElementById('clockDisplay').textContent = `${timeStr} IST`;
+    }, 1000);
+
+    // Bootstrap
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadAllCities();
+    });
+  </script>
+</body>
+</html>
