@@ -858,38 +858,81 @@
     }
 
     let streamSource = null;
+    let pollTimer = null;
+    let isFetching = false;
 
-    // Real-Time Persistent EventStream (Like Stock Broker Trading Terminals)
+    // Real-time rates fetcher for Vercel Serverless & Local Backends
+    async function fetchLiveRates() {
+      if (isFetching) return;
+      isFetching = true;
+      try {
+        const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}&_t=${Date.now()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            renderAllGrids(data);
+            const statusPill = document.getElementById('statusPill');
+            const statusText = document.getElementById('statusText');
+            if (statusPill && statusText) {
+              statusPill.className = 'status-pill live';
+              statusText.textContent = 'Live 1s Feed';
+            }
+            const errorAlert = document.getElementById('errorAlert');
+            if (errorAlert) errorAlert.classList.remove('show');
+          }
+        }
+      } catch (err) {
+        console.warn('Live fetch error:', err);
+      } finally {
+        isFetching = false;
+      }
+    }
+
+    // Real-Time Persistent EventStream & 1-Second Synchronizer
     function startMarketStream() {
+      // 1. Clear any existing poll timer
+      if (pollTimer) clearInterval(pollTimer);
+
+      // 2. Immediate fetch and start 1-second auto-refresh
+      fetchLiveRates();
+      pollTimer = setInterval(fetchLiveRates, 1000);
+
+      // 3. Connect to EventSource if available
       if (streamSource) {
         try { streamSource.close(); } catch (e) {}
         streamSource = null;
       }
 
-      const streamUrl = `/api/stream?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`;
-      streamSource = new EventSource(streamUrl);
+      try {
+        const streamUrl = `/api/stream?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`;
+        streamSource = new EventSource(streamUrl);
 
-      streamSource.onopen = () => {
-        document.getElementById('statusPill').className = 'status-pill live';
-        document.getElementById('statusText').textContent = 'Live Streaming';
-        document.getElementById('errorAlert').classList.remove('show');
-      };
+        streamSource.onopen = () => {
+          document.getElementById('statusPill').className = 'status-pill live';
+          document.getElementById('statusText').textContent = 'Live Streaming';
+          document.getElementById('errorAlert').classList.remove('show');
+        };
 
-      streamSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && data.success) {
-            renderAllGrids(data);
+        streamSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data && data.success) {
+              renderAllGrids(data);
+            }
+          } catch (err) {
+            console.error('Stream parse error:', err);
           }
-        } catch (err) {
-          console.error('Stream parse error:', err);
-        }
-      };
+        };
 
-      streamSource.onerror = () => {
-        document.getElementById('statusPill').className = 'status-pill connecting';
-        document.getElementById('statusText').textContent = 'Reconnecting...';
-      };
+        streamSource.onerror = () => {
+          // On serverless hosting (Vercel), SSE may not be hosted as a long-lived process.
+          // The 1s polling above keeps live rates streaming seamlessly.
+          try { streamSource.close(); } catch (e) {}
+          streamSource = null;
+        };
+      } catch (e) {
+        // SSE unsupported or offline, polling handles live feed
+      }
     }
 
     // Load Cities from cities.json
