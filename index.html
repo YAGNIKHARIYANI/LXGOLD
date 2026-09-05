@@ -861,15 +861,50 @@
     let pollTimer = null;
     let isFetching = false;
 
+    function unwrapAstro(val) {
+      if (Array.isArray(val)) {
+        if (val.length === 2 && typeof val[0] === 'number') return unwrapAstro(val[1]);
+        return val.map(unwrapAstro);
+      } else if (val && typeof val === 'object') {
+        const out = {};
+        for (const k in val) out[k] = unwrapAstro(val[k]);
+        return out;
+      }
+      return val;
+    }
+
+    function extractRatesFromHtml(html, st, ct) {
+      if (!html) return null;
+      const match = html.match(/component-url="[^"]*RateBoard[^"]*"[^>]*props="([^"]+)"/);
+      if (match) {
+        const decoded = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        const parsed = JSON.parse(decoded);
+        const unwrapped = unwrapAstro(parsed);
+        const initial = unwrapped.initial || {};
+        if (initial.ref && initial.ref.length > 0) {
+          return {
+            success: true,
+            state: st,
+            city: ct,
+            top: initial.top || [],
+            ref: initial.ref || [],
+            ts: initial.ts || Date.now()
+          };
+        }
+      }
+      return null;
+    }
+
     // Real-time rates fetcher for Vercel Serverless & Local Backends
     async function fetchLiveRates() {
       if (isFetching) return;
       isFetching = true;
       try {
+        // 1. Try local or Vercel serverless /api/rates
         const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}&_t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
-          if (data && data.success) {
+          if (data && data.success && data.ref && data.ref.length > 0) {
             renderAllGrids(data);
             const statusPill = document.getElementById('statusPill');
             const statusText = document.getElementById('statusText');
@@ -879,6 +914,44 @@
             }
             const errorAlert = document.getElementById('errorAlert');
             if (errorAlert) errorAlert.classList.remove('show');
+            return;
+          }
+        }
+
+        // 2. Direct browser CORS proxy fallback for 100% exact raw data on Vercel
+        const stateSlug = (currentState || 'gujarat').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const citySlug = (currentCity || 'ahmedabad').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const proxyUrls = [
+          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}?_t=${Date.now()}`,
+          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}?_t=${Date.now()}`,
+          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/gujarat/ahmedabad?_t=${Date.now()}`
+        ];
+
+        for (const pUrl of proxyUrls) {
+          try {
+            const pRes = await fetch(pUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            if (pRes.ok) {
+              const html = await pRes.text();
+              const parsedData = extractRatesFromHtml(html, currentState, currentCity);
+              if (parsedData) {
+                renderAllGrids(parsedData);
+                const statusPill = document.getElementById('statusPill');
+                const statusText = document.getElementById('statusText');
+                if (statusPill && statusText) {
+                  statusPill.className = 'status-pill live';
+                  statusText.textContent = 'Live 1s Feed';
+                }
+                const errorAlert = document.getElementById('errorAlert');
+                if (errorAlert) errorAlert.classList.remove('show');
+                return;
+              }
+            }
+          } catch (e) {
+            continue;
           }
         }
       } catch (err) {
