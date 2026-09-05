@@ -9,3 +9,4 @@ inspect_props.py
 test_fetch.py
 .system_generated/
 *.log
+scratch/
