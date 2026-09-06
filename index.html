@@ -977,123 +977,81 @@
     }
 
     // Real-time rates fetcher for Vercel Serverless & Local Backends
-    let streamSource = null;
-    let pollTimer = null;
-    let isFetching = false;
-    let lastEtag = null;
-    let activePollIntervalMs = 6000;
-
-    // Instant Fallback Initial States Map (0ms Dropdown Render Guarantee)
-    let allCitiesMap = {
-      "GUJARAT": ["AHMEDABAD", "SURAT", "VADODARA", "RAJKOT", "BHAVNAGAR", "JAMNAGAR", "GANDHINAGAR", "JUNAGADH", "ANAND", "NAVSARI", "MORBI", "BHARUCH", "PORBANDAR", "VALSAD", "MEHSANA"],
-      "MAHARASHTRA": ["MUMBAI", "PUNE", "NAGPUR", "THANE", "NASHIK", "AURANGABAD", "SOLAPUR", "KOLHAPUR", "AMRAVATI", "NAVI MUMBAI"],
-      "DELHI": ["DELHI", "NEW DELHI"],
-      "RAJASTHAN": ["JAIPUR", "JODHPUR", "KOTA", "BIKANER", "AJMER", "UDAIPUR", "BHILWARA", "ALWAR", "SIKAR"],
-      "KARNATAKA": ["BANGALORE", "MYSORE", "HUBLI", "MANGALORE", "BELGAUM", "GULBARGA", "DAVANAGERE", "BELLARY"],
-      "TAMIL NADU": ["CHENNAI", "COIMBATORE", "MADURAI", "TIRUCHIRAPPALLI", "SALEM", "TIRUNELVELI", "TIRUPPUR", "VELLORE", "ERODE", "THOOTHUKUDI"],
-      "UTTAR PRADESH": ["LUCKNOW", "KANPUR", "VARANASI", "AGRA", "MEERUT", "PRAYAGRAJ", "GHAZIABAD", "NOIDA", "ALIGARH", "BAREILLY", "MORADABAD", "GORAKHPUR"],
-      "WEST BENGAL": ["KOLKATA", "HOWRAH", "DURGAPUR", "ASANSOL", "SILIGURI"],
-      "TELANGANA": ["HYDERABAD", "WARANGAL", "NIZAMABAD", "KHAMMAM", "KARIMNAGAR"],
-      "KERALA": ["THIRUVANANTHAPURAM", "KOCHI", "KOZHIKODE", "THRISSUR", "KOLLAM", "PALAKKAD", "ALAPPUZHA", "KANNUR"],
-      "MADHYA PRADESH": ["BHOPAL", "INDORE", "GWALIOR", "JABALPUR", "UJJAIN", "SAGAR"],
-      "PUNJAB": ["LUDHIANA", "AMRITSAR", "JALANDHAR", "PATIALA", "BATHINDA", "MOHALI"],
-      "HARYANA": ["GURGAON", "FARIDABAD", "PANIPAT", "AMBALA", "YAMUNANAGAR", "ROHTAK", "HISAR", "KARNAL"],
-      "BIHAR": ["PATNA", "GAYA", "BHAGALPUR", "MUZAFFARPUR", "PURNEA", "DARBHANGA"],
-      "ODISHA": ["BHUBANESWAR", "CUTTACK", "ROURKELA", "BERHAMPUR", "SAMBALPUR", "PURI"],
-      "ANDHRA PRADESH": ["VISAKHAPATNAM", "VIJAYAWADA", "GUNTUR", "NELLORE", "KURNOOL", "RAJAHMUNDRY", "TIRUPATI", "KADAPA", "KAKINADA"]
-    };
-
-    // Rates Synchronizer with Vercel Edge CDN & Instant Fallback
     async function fetchLiveRates() {
-      if (isFetching || document.hidden) return;
+      if (isFetching) return;
       isFetching = true;
-
       try {
-        const fetchHeaders = { 'Accept': 'application/json' };
-        if (lastEtag) fetchHeaders['If-None-Match'] = lastEtag;
-
-        const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`, {
-          headers: fetchHeaders
-        });
-
-        // 304 Not Modified: Rates unchanged
-        if (res.status === 304) {
-          updateLiveStatus(true);
-          return;
-        }
-
+        // 1. Try local or Vercel serverless /api/rates
+        const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}&_t=${Date.now()}`);
         if (res.ok) {
-          const newEtag = res.headers.get('ETag');
-          if (newEtag) lastEtag = newEtag;
-
           const data = await res.json();
           if (data && data.success && data.ref && data.ref.length > 0) {
             renderAllGrids(data);
-            updateLiveStatus(true);
+            const statusPill = document.getElementById('statusPill');
+            const statusText = document.getElementById('statusText');
+            if (statusPill && statusText) {
+              statusPill.className = 'status-pill live';
+              statusText.textContent = 'Live 1s Feed';
+            }
+            const errorAlert = document.getElementById('errorAlert');
+            if (errorAlert) errorAlert.classList.remove('show');
             return;
           }
         }
 
-        // Immediate Client-Side Direct Fallback if serverless has a delay
-        await fallbackDirectBrowserFetch();
+        // 2. Direct browser CORS proxy fallback for 100% exact raw data on Vercel
+        const stateSlug = (currentState || 'gujarat').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const citySlug = (currentCity || 'ahmedabad').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const proxyUrls = [
+          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}?_t=${Date.now()}`,
+          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}?_t=${Date.now()}`,
+          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/gujarat/ahmedabad?_t=${Date.now()}`
+        ];
+
+        for (const pUrl of proxyUrls) {
+          try {
+            const pRes = await fetch(pUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            if (pRes.ok) {
+              const html = await pRes.text();
+              const parsedData = extractRatesFromHtml(html, currentState, currentCity);
+              if (parsedData) {
+                renderAllGrids(parsedData);
+                const statusPill = document.getElementById('statusPill');
+                const statusText = document.getElementById('statusText');
+                if (statusPill && statusText) {
+                  statusPill.className = 'status-pill live';
+                  statusText.textContent = 'Live 1s Feed';
+                }
+                const errorAlert = document.getElementById('errorAlert');
+                if (errorAlert) errorAlert.classList.remove('show');
+                return;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
       } catch (err) {
-        console.warn('Rates sync fallback triggered:', err.message);
-        await fallbackDirectBrowserFetch();
+        console.warn('Live fetch error:', err);
       } finally {
         isFetching = false;
       }
     }
 
-    async function fallbackDirectBrowserFetch() {
-      const stateSlug = (currentState || 'gujarat').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const citySlug = (currentCity || 'ahmedabad').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const proxyUrls = [
-        `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}`,
-        `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/gujarat/ahmedabad`
-      ];
-
-      for (const pUrl of proxyUrls) {
-        try {
-          const pRes = await fetch(pUrl, { signal: AbortSignal.timeout(4000) });
-          if (pRes.ok) {
-            const html = await pRes.text();
-            const parsedData = extractRatesFromHtml(html, currentState, currentCity);
-            if (parsedData) {
-              renderAllGrids(parsedData);
-              updateLiveStatus(true);
-              return;
-            }
-          }
-        } catch (_) {}
-      }
-    }
-
-    function updateLiveStatus(isLive) {
-      const statusPill = document.getElementById('statusPill');
-      const statusText = document.getElementById('statusText');
-      if (statusPill && statusText) {
-        statusPill.className = isLive ? 'status-pill live' : 'status-pill connecting';
-        statusText.textContent = isLive ? 'Live 1s Feed' : 'Connecting...';
-      }
-      const errorAlert = document.getElementById('errorAlert');
-      if (errorAlert && isLive) errorAlert.classList.remove('show');
-    }
-
-    // Adaptive Tab Lifecycle Synchronizer
+    // Real-Time Persistent EventStream & 1-Second Synchronizer
     function startMarketStream() {
+      // 1. Clear any existing poll timer
       if (pollTimer) clearInterval(pollTimer);
 
-      // Immediate fetch
+      // 2. Immediate fetch and start 1-second auto-refresh
       fetchLiveRates();
+      pollTimer = setInterval(fetchLiveRates, 1000);
 
-      // Adaptive Smart Interval (6s when active, paused when tab inactive)
-      pollTimer = setInterval(() => {
-        if (!document.hidden) {
-          fetchLiveRates();
-        }
-      }, activePollIntervalMs);
-
-      // Attempt SSE stream if running on local backend
+      // 3. Connect to EventSource if available
       if (streamSource) {
         try { streamSource.close(); } catch (e) {}
         streamSource = null;
@@ -1103,74 +1061,56 @@
         const streamUrl = `/api/stream?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`;
         streamSource = new EventSource(streamUrl);
 
+        streamSource.onopen = () => {
+          document.getElementById('statusPill').className = 'status-pill live';
+          document.getElementById('statusText').textContent = 'Live Streaming';
+          document.getElementById('errorAlert').classList.remove('show');
+        };
+
         streamSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
             if (data && data.success) {
               renderAllGrids(data);
-              updateLiveStatus(true);
             }
-          } catch (_) {}
+          } catch (err) {
+            console.error('Stream parse error:', err);
+          }
         };
 
         streamSource.onerror = () => {
-          try { streamSource.close(); } catch (_) {}
+          // On serverless hosting (Vercel), SSE may not be hosted as a long-lived process.
+          // The 1s polling above keeps live rates streaming seamlessly.
+          try { streamSource.close(); } catch (e) {}
           streamSource = null;
         };
-      } catch (_) {}
-    }
-
-    // Tab Visibility Management
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        if (pollTimer) {
-          clearInterval(pollTimer);
-          pollTimer = null;
-        }
-      } else {
-        lastEtag = null;
-        fetchLiveRates();
-        if (!pollTimer) {
-          pollTimer = setInterval(fetchLiveRates, activePollIntervalMs);
-        }
+      } catch (e) {
+        // SSE unsupported or offline, polling handles live feed
       }
-    });
-
-    // Populate Initial State & City Dropdowns
-    function initDropdowns() {
-      const stateSelect = document.getElementById('stateSelect');
-      if (!stateSelect) return;
-      const states = Object.keys(allCitiesMap);
-      stateSelect.innerHTML = states.map(st => `<option value="${st}" ${st === 'GUJARAT' ? 'selected' : ''}>${st}</option>`).join('');
-      populateCitiesForState('GUJARAT');
     }
 
-    // Hydrate Complete 679 Cities from cities.json
+    // Load Cities from cities.json
     async function loadAllCities() {
-      initDropdowns(); // Immediate render
       try {
         const res = await fetch('/cities.json');
         if (res.ok) {
-          const fullMap = await res.json();
-          if (fullMap && Object.keys(fullMap).length > 0) {
-            allCitiesMap = fullMap;
-            const stateSelect = document.getElementById('stateSelect');
-            const curSt = stateSelect.value || 'GUJARAT';
-            const states = Object.keys(allCitiesMap);
-            stateSelect.innerHTML = states.map(st => `<option value="${st}" ${st === curSt ? 'selected' : ''}>${st}</option>`).join('');
-            populateCitiesForState(curSt);
-          }
+          allCitiesMap = await res.json();
         }
       } catch (e) {
-        console.warn('Using embedded cities map');
+        console.warn('Could not load cities.json');
       }
+
+      const stateSelect = document.getElementById('stateSelect');
+      const states = Object.keys(allCitiesMap);
+      stateSelect.innerHTML = states.map(st => `<option value="${st}" ${st === 'GUJARAT' ? 'selected' : ''}>${st}</option>`).join('');
+
+      populateCitiesForState('GUJARAT');
     }
 
     function populateCitiesForState(st) {
       currentState = st;
       const cities = allCitiesMap[st] || ['AHMEDABAD'];
       const citySelect = document.getElementById('citySelect');
-      if (!citySelect) return;
       citySelect.innerHTML = cities.map((c, i) => `<option value="${c}" ${c === 'AHMEDABAD' || i === 0 ? 'selected' : ''}>${c}</option>`).join('');
 
       currentCity = cities.includes('AHMEDABAD') ? 'AHMEDABAD' : cities[0];
