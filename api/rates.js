@@ -1,9 +1,11 @@
 import crypto from 'crypto';
 
-// In-Memory Global Server Cache & Request Coalescing Map
+// In-Memory Global Server Cache & Rate Limiting Map
 const MEMORY_CACHE = new Map();
 const IN_FLIGHT_REQUESTS = new Map();
+const RATE_LIMIT_MAP = new Map();
 const CACHE_TTL_MS = 6000; // 6 seconds memory cache
+const MAX_REQUESTS_PER_MINUTE = 40; // Max requests per IP per minute
 
 function unwrap(val) {
   if (Array.isArray(val)) {
@@ -72,7 +74,40 @@ async function fetchFromUpstream(stateSlug, citySlug, state, city) {
   return null;
 }
 
+// Security: IP Rate Limiting Guard
+function isRateLimited(ip) {
+  if (!ip) return false;
+  const now = Date.now();
+  const windowMs = 60000;
+  
+  const record = RATE_LIMIT_MAP.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > record.resetAt) {
+    record.count = 1;
+    record.resetAt = now + windowMs;
+  } else {
+    record.count++;
+  }
+  RATE_LIMIT_MAP.set(ip, record);
+
+  // Clean stale IP records periodically
+  if (RATE_LIMIT_MAP.size > 2000) {
+    for (const [k, v] of RATE_LIMIT_MAP.entries()) {
+      if (now > v.resetAt) RATE_LIMIT_MAP.delete(k);
+    }
+  }
+
+  return record.count > MAX_REQUESTS_PER_MINUTE;
+}
+
 export default async function handler(req, res) {
+  // 1. Enterprise Security Headers
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  
   // CORS & Modern Cache Directives for Vercel Edge Network
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -83,13 +118,40 @@ export default async function handler(req, res) {
   res.setHeader('CDN-Cache-Control', 'public, s-maxage=8, stale-while-revalidate=30');
   res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=8, stale-while-revalidate=30');
 
+  // 2. HTTP Method Whitelist
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+  }
 
+  // 3. Bot & Malicious Scraper Filter
+  const userAgent = req.headers['user-agent'] || '';
+  if (/sqlmap|nikto|w3af|acunetix|masscan|zgrab/i.test(userAgent)) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  // 4. Rate Limiting Protection
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+  if (isRateLimited(clientIp)) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({ success: false, error: 'Too Many Requests - Rate limit exceeded' });
+  }
+
+  // 5. Strict Input Sanitization & Whitelisting
   const query = req.query || {};
-  const state = (query.state || 'gujarat').toLowerCase().trim();
-  const city = (query.city || 'ahmedabad').toLowerCase().trim();
+  const rawState = String(query.state || 'gujarat').trim();
+  const rawCity = String(query.city || 'ahmedabad').trim();
+
+  // Whitelist: letters, numbers, spaces, and hyphens (max 50 chars)
+  const inputRegex = /^[a-zA-Z0-9\s\-]{1,50}$/;
+  if (!inputRegex.test(rawState) || !inputRegex.test(rawCity)) {
+    return res.status(400).json({ success: false, error: 'Invalid input parameters' });
+  }
+
+  const state = rawState.toLowerCase();
+  const city = rawCity.toLowerCase();
   const stateSlug = state.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const citySlug = city.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const cacheKey = `${stateSlug}_${citySlug}`;
@@ -97,7 +159,7 @@ export default async function handler(req, res) {
   const now = Date.now();
   const cached = MEMORY_CACHE.get(cacheKey);
 
-  // 1. Check in-memory fast cache
+  // 6. Check In-Memory Fast Cache
   if (cached && (now - cached.cachedAt < CACHE_TTL_MS)) {
     const clientEtag = req.headers['if-none-match'];
     if (clientEtag && clientEtag === cached.etag) {
@@ -108,7 +170,7 @@ export default async function handler(req, res) {
     return res.status(200).json(cached.data);
   }
 
-  // 2. Coalesce concurrent requests into a single in-flight Promise (deduplication)
+  // 7. Coalesce concurrent requests into a single in-flight Promise (deduplication)
   let fetchPromise = IN_FLIGHT_REQUESTS.get(cacheKey);
   if (!fetchPromise) {
     fetchPromise = fetchFromUpstream(stateSlug, citySlug, state, city)
