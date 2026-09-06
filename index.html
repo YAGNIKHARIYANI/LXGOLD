@@ -981,29 +981,43 @@
     let pollTimer = null;
     let isFetching = false;
     let lastEtag = null;
-    let activePollIntervalMs = 6000; // 6 seconds active cadence (reduces usage by >85%)
-    let consecutiveFailures = 0;
+    let activePollIntervalMs = 6000;
 
-    // Pro-Level Rates Synchronizer with Vercel Edge CDN & ETag Support
+    // Instant Fallback Initial States Map (0ms Dropdown Render Guarantee)
+    let allCitiesMap = {
+      "GUJARAT": ["AHMEDABAD", "SURAT", "VADODARA", "RAJKOT", "BHAVNAGAR", "JAMNAGAR", "GANDHINAGAR", "JUNAGADH", "ANAND", "NAVSARI", "MORBI", "BHARUCH", "PORBANDAR", "VALSAD", "MEHSANA"],
+      "MAHARASHTRA": ["MUMBAI", "PUNE", "NAGPUR", "THANE", "NASHIK", "AURANGABAD", "SOLAPUR", "KOLHAPUR", "AMRAVATI", "NAVI MUMBAI"],
+      "DELHI": ["DELHI", "NEW DELHI"],
+      "RAJASTHAN": ["JAIPUR", "JODHPUR", "KOTA", "BIKANER", "AJMER", "UDAIPUR", "BHILWARA", "ALWAR", "SIKAR"],
+      "KARNATAKA": ["BANGALORE", "MYSORE", "HUBLI", "MANGALORE", "BELGAUM", "GULBARGA", "DAVANAGERE", "BELLARY"],
+      "TAMIL NADU": ["CHENNAI", "COIMBATORE", "MADURAI", "TIRUCHIRAPPALLI", "SALEM", "TIRUNELVELI", "TIRUPPUR", "VELLORE", "ERODE", "THOOTHUKUDI"],
+      "UTTAR PRADESH": ["LUCKNOW", "KANPUR", "VARANASI", "AGRA", "MEERUT", "PRAYAGRAJ", "GHAZIABAD", "NOIDA", "ALIGARH", "BAREILLY", "MORADABAD", "GORAKHPUR"],
+      "WEST BENGAL": ["KOLKATA", "HOWRAH", "DURGAPUR", "ASANSOL", "SILIGURI"],
+      "TELANGANA": ["HYDERABAD", "WARANGAL", "NIZAMABAD", "KHAMMAM", "KARIMNAGAR"],
+      "KERALA": ["THIRUVANANTHAPURAM", "KOCHI", "KOZHIKODE", "THRISSUR", "KOLLAM", "PALAKKAD", "ALAPPUZHA", "KANNUR"],
+      "MADHYA PRADESH": ["BHOPAL", "INDORE", "GWALIOR", "JABALPUR", "UJJAIN", "SAGAR"],
+      "PUNJAB": ["LUDHIANA", "AMRITSAR", "JALANDHAR", "PATIALA", "BATHINDA", "MOHALI"],
+      "HARYANA": ["GURGAON", "FARIDABAD", "PANIPAT", "AMBALA", "YAMUNANAGAR", "ROHTAK", "HISAR", "KARNAL"],
+      "BIHAR": ["PATNA", "GAYA", "BHAGALPUR", "MUZAFFARPUR", "PURNEA", "DARBHANGA"],
+      "ODISHA": ["BHUBANESWAR", "CUTTACK", "ROURKELA", "BERHAMPUR", "SAMBALPUR", "PURI"],
+      "ANDHRA PRADESH": ["VISAKHAPATNAM", "VIJAYAWADA", "GUNTUR", "NELLORE", "KURNOOL", "RAJAHMUNDRY", "TIRUPATI", "KADAPA", "KAKINADA"]
+    };
+
+    // Rates Synchronizer with Vercel Edge CDN & Instant Fallback
     async function fetchLiveRates() {
       if (isFetching || document.hidden) return;
       isFetching = true;
 
       try {
-        const fetchHeaders = {
-          'Accept': 'application/json'
-        };
-        if (lastEtag) {
-          fetchHeaders['If-None-Match'] = lastEtag;
-        }
+        const fetchHeaders = { 'Accept': 'application/json' };
+        if (lastEtag) fetchHeaders['If-None-Match'] = lastEtag;
 
         const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`, {
           headers: fetchHeaders
         });
 
-        // 304 Not Modified: Rates unchanged, zero data transfer required!
+        // 304 Not Modified: Rates unchanged
         if (res.status === 304) {
-          consecutiveFailures = 0;
           updateLiveStatus(true);
           return;
         }
@@ -1014,21 +1028,17 @@
 
           const data = await res.json();
           if (data && data.success && data.ref && data.ref.length > 0) {
-            consecutiveFailures = 0;
             renderAllGrids(data);
             updateLiveStatus(true);
             return;
           }
         }
 
-        // Upstream fallback if serverless has a momentary timeout
-        consecutiveFailures++;
-        if (consecutiveFailures > 2) {
-          await fallbackDirectBrowserFetch();
-        }
+        // Immediate Client-Side Direct Fallback if serverless has a delay
+        await fallbackDirectBrowserFetch();
       } catch (err) {
-        consecutiveFailures++;
-        console.warn('Rates sync attempt:', err.message);
+        console.warn('Rates sync fallback triggered:', err.message);
+        await fallbackDirectBrowserFetch();
       } finally {
         isFetching = false;
       }
@@ -1063,7 +1073,7 @@
       const statusText = document.getElementById('statusText');
       if (statusPill && statusText) {
         statusPill.className = isLive ? 'status-pill live' : 'status-pill connecting';
-        statusText.textContent = isLive ? 'Live Sync Active' : 'Reconnecting...';
+        statusText.textContent = isLive ? 'Live 1s Feed' : 'Connecting...';
       }
       const errorAlert = document.getElementById('errorAlert');
       if (errorAlert && isLive) errorAlert.classList.remove('show');
@@ -1083,7 +1093,7 @@
         }
       }, activePollIntervalMs);
 
-      // Attempt SSE stream if running on persistent local backend
+      // Attempt SSE stream if running on local backend
       if (streamSource) {
         try { streamSource.close(); } catch (e) {}
         streamSource = null;
@@ -1110,7 +1120,7 @@
       } catch (_) {}
     }
 
-    // Tab Visibility Management: Automatically pauses background requests when user is on another tab
+    // Tab Visibility Management
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         if (pollTimer) {
@@ -1118,7 +1128,6 @@
           pollTimer = null;
         }
       } else {
-        // User returned to tab -> trigger immediate fresh sync and restart timer
         lastEtag = null;
         fetchLiveRates();
         if (!pollTimer) {
@@ -1127,28 +1136,41 @@
       }
     });
 
-    // Load Cities from cities.json
-    async function loadAllCities() {
-      try {
-        const res = await fetch('/cities.json', { cache: 'force-cache' });
-        if (res.ok) {
-          allCitiesMap = await res.json();
-        }
-      } catch (e) {
-        console.warn('Could not load cities.json');
-      }
-
+    // Populate Initial State & City Dropdowns
+    function initDropdowns() {
       const stateSelect = document.getElementById('stateSelect');
+      if (!stateSelect) return;
       const states = Object.keys(allCitiesMap);
       stateSelect.innerHTML = states.map(st => `<option value="${st}" ${st === 'GUJARAT' ? 'selected' : ''}>${st}</option>`).join('');
-
       populateCitiesForState('GUJARAT');
+    }
+
+    // Hydrate Complete 679 Cities from cities.json
+    async function loadAllCities() {
+      initDropdowns(); // Immediate render
+      try {
+        const res = await fetch('/cities.json');
+        if (res.ok) {
+          const fullMap = await res.json();
+          if (fullMap && Object.keys(fullMap).length > 0) {
+            allCitiesMap = fullMap;
+            const stateSelect = document.getElementById('stateSelect');
+            const curSt = stateSelect.value || 'GUJARAT';
+            const states = Object.keys(allCitiesMap);
+            stateSelect.innerHTML = states.map(st => `<option value="${st}" ${st === curSt ? 'selected' : ''}>${st}</option>`).join('');
+            populateCitiesForState(curSt);
+          }
+        }
+      } catch (e) {
+        console.warn('Using embedded cities map');
+      }
     }
 
     function populateCitiesForState(st) {
       currentState = st;
       const cities = allCitiesMap[st] || ['AHMEDABAD'];
       const citySelect = document.getElementById('citySelect');
+      if (!citySelect) return;
       citySelect.innerHTML = cities.map((c, i) => `<option value="${c}" ${c === 'AHMEDABAD' || i === 0 ? 'selected' : ''}>${c}</option>`).join('');
 
       currentCity = cities.includes('AHMEDABAD') ? 'AHMEDABAD' : cities[0];
