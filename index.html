@@ -977,81 +977,113 @@
     }
 
     // Real-time rates fetcher for Vercel Serverless & Local Backends
+    let streamSource = null;
+    let pollTimer = null;
+    let isFetching = false;
+    let lastEtag = null;
+    let activePollIntervalMs = 6000; // 6 seconds active cadence (reduces usage by >85%)
+    let consecutiveFailures = 0;
+
+    // Pro-Level Rates Synchronizer with Vercel Edge CDN & ETag Support
     async function fetchLiveRates() {
-      if (isFetching) return;
+      if (isFetching || document.hidden) return;
       isFetching = true;
+
       try {
-        // 1. Try local or Vercel serverless /api/rates
-        const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}&_t=${Date.now()}`);
+        const fetchHeaders = {
+          'Accept': 'application/json'
+        };
+        if (lastEtag) {
+          fetchHeaders['If-None-Match'] = lastEtag;
+        }
+
+        const res = await fetch(`/api/rates?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`, {
+          headers: fetchHeaders
+        });
+
+        // 304 Not Modified: Rates unchanged, zero data transfer required!
+        if (res.status === 304) {
+          consecutiveFailures = 0;
+          updateLiveStatus(true);
+          return;
+        }
+
         if (res.ok) {
+          const newEtag = res.headers.get('ETag');
+          if (newEtag) lastEtag = newEtag;
+
           const data = await res.json();
           if (data && data.success && data.ref && data.ref.length > 0) {
+            consecutiveFailures = 0;
             renderAllGrids(data);
-            const statusPill = document.getElementById('statusPill');
-            const statusText = document.getElementById('statusText');
-            if (statusPill && statusText) {
-              statusPill.className = 'status-pill live';
-              statusText.textContent = 'Live 1s Feed';
-            }
-            const errorAlert = document.getElementById('errorAlert');
-            if (errorAlert) errorAlert.classList.remove('show');
+            updateLiveStatus(true);
             return;
           }
         }
 
-        // 2. Direct browser CORS proxy fallback for 100% exact raw data on Vercel
-        const stateSlug = (currentState || 'gujarat').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-        const citySlug = (currentCity || 'ahmedabad').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-        const proxyUrls = [
-          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}?_t=${Date.now()}`,
-          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}?_t=${Date.now()}`,
-          `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/gujarat/ahmedabad?_t=${Date.now()}`
-        ];
-
-        for (const pUrl of proxyUrls) {
-          try {
-            const pRes = await fetch(pUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-              }
-            });
-            if (pRes.ok) {
-              const html = await pRes.text();
-              const parsedData = extractRatesFromHtml(html, currentState, currentCity);
-              if (parsedData) {
-                renderAllGrids(parsedData);
-                const statusPill = document.getElementById('statusPill');
-                const statusText = document.getElementById('statusText');
-                if (statusPill && statusText) {
-                  statusPill.className = 'status-pill live';
-                  statusText.textContent = 'Live 1s Feed';
-                }
-                const errorAlert = document.getElementById('errorAlert');
-                if (errorAlert) errorAlert.classList.remove('show');
-                return;
-              }
-            }
-          } catch (e) {
-            continue;
-          }
+        // Upstream fallback if serverless has a momentary timeout
+        consecutiveFailures++;
+        if (consecutiveFailures > 2) {
+          await fallbackDirectBrowserFetch();
         }
       } catch (err) {
-        console.warn('Live fetch error:', err);
+        consecutiveFailures++;
+        console.warn('Rates sync attempt:', err.message);
       } finally {
         isFetching = false;
       }
     }
 
-    // Real-Time Persistent EventStream & 1-Second Synchronizer
+    async function fallbackDirectBrowserFetch() {
+      const stateSlug = (currentState || 'gujarat').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const citySlug = (currentCity || 'ahmedabad').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const proxyUrls = [
+        `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/${stateSlug}/${citySlug}`,
+        `https://proxy.cors.sh/https://allindiabullion.com/gold-rate/gujarat/ahmedabad`
+      ];
+
+      for (const pUrl of proxyUrls) {
+        try {
+          const pRes = await fetch(pUrl, { signal: AbortSignal.timeout(4000) });
+          if (pRes.ok) {
+            const html = await pRes.text();
+            const parsedData = extractRatesFromHtml(html, currentState, currentCity);
+            if (parsedData) {
+              renderAllGrids(parsedData);
+              updateLiveStatus(true);
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    function updateLiveStatus(isLive) {
+      const statusPill = document.getElementById('statusPill');
+      const statusText = document.getElementById('statusText');
+      if (statusPill && statusText) {
+        statusPill.className = isLive ? 'status-pill live' : 'status-pill connecting';
+        statusText.textContent = isLive ? 'Live Sync Active' : 'Reconnecting...';
+      }
+      const errorAlert = document.getElementById('errorAlert');
+      if (errorAlert && isLive) errorAlert.classList.remove('show');
+    }
+
+    // Adaptive Tab Lifecycle Synchronizer
     function startMarketStream() {
-      // 1. Clear any existing poll timer
       if (pollTimer) clearInterval(pollTimer);
 
-      // 2. Immediate fetch and start 1-second auto-refresh
+      // Immediate fetch
       fetchLiveRates();
-      pollTimer = setInterval(fetchLiveRates, 1000);
 
-      // 3. Connect to EventSource if available
+      // Adaptive Smart Interval (6s when active, paused when tab inactive)
+      pollTimer = setInterval(() => {
+        if (!document.hidden) {
+          fetchLiveRates();
+        }
+      }, activePollIntervalMs);
+
+      // Attempt SSE stream if running on persistent local backend
       if (streamSource) {
         try { streamSource.close(); } catch (e) {}
         streamSource = null;
@@ -1061,38 +1093,44 @@
         const streamUrl = `/api/stream?state=${encodeURIComponent(currentState)}&city=${encodeURIComponent(currentCity)}`;
         streamSource = new EventSource(streamUrl);
 
-        streamSource.onopen = () => {
-          document.getElementById('statusPill').className = 'status-pill live';
-          document.getElementById('statusText').textContent = 'Live Streaming';
-          document.getElementById('errorAlert').classList.remove('show');
-        };
-
         streamSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
             if (data && data.success) {
               renderAllGrids(data);
+              updateLiveStatus(true);
             }
-          } catch (err) {
-            console.error('Stream parse error:', err);
-          }
+          } catch (_) {}
         };
 
         streamSource.onerror = () => {
-          // On serverless hosting (Vercel), SSE may not be hosted as a long-lived process.
-          // The 1s polling above keeps live rates streaming seamlessly.
-          try { streamSource.close(); } catch (e) {}
+          try { streamSource.close(); } catch (_) {}
           streamSource = null;
         };
-      } catch (e) {
-        // SSE unsupported or offline, polling handles live feed
-      }
+      } catch (_) {}
     }
+
+    // Tab Visibility Management: Automatically pauses background requests when user is on another tab
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      } else {
+        // User returned to tab -> trigger immediate fresh sync and restart timer
+        lastEtag = null;
+        fetchLiveRates();
+        if (!pollTimer) {
+          pollTimer = setInterval(fetchLiveRates, activePollIntervalMs);
+        }
+      }
+    });
 
     // Load Cities from cities.json
     async function loadAllCities() {
       try {
-        const res = await fetch('/cities.json');
+        const res = await fetch('/cities.json', { cache: 'force-cache' });
         if (res.ok) {
           allCitiesMap = await res.json();
         }
